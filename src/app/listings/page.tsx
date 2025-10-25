@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import Link from "next/link";
 import MapSection from "@/components/MapSection";
 import FiltersClient from "@/components/FiltersClient";
+import MapToggle from "@/components/MapToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ async function unwrapSearchParams(
     animalType: get("animalType"),
     status: get("status"),
     city: get("city"),
+    showMap: get("showMap"), // "0" per nascondere, altrimenti ON
   };
 }
 
@@ -49,11 +51,12 @@ export default async function ListingsPage(
     | { searchParams?: { [key: string]: string | string[] | undefined } }
     | { searchParams?: Promise<{ [key: string]: string | string[] | undefined }> }
 ) {
-  // 1) leggi query (default: tutti i post)
+  // 1) leggi query (default: tutti i post e mappa visibile)
   const raw = await unwrapSearchParams(props);
   const qAnimal = toEnum(raw.animalType || undefined, animalTypes);
   const qStatus = toEnum(raw.status || undefined, statuses);
   const qCity = (raw.city ?? "").trim();
+  const showMap = (raw.showMap ?? "1") !== "0"; // default ON
 
   // 2) costruisci filtro server-side (SQLite-friendly)
   const where: any = {};
@@ -79,22 +82,25 @@ export default async function ListingsPage(
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">Pet Listings</h1>
-        <Link
-          href="/listings/new"
-          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-        >
-          + Nuovo annuncio
-        </Link>
+        <div className="flex items-center gap-3">
+          <MapToggle />
+          <Link
+            href="/listings/new"
+            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            + Nuovo annuncio
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* SIDEBAR */}
         <aside className="lg:col-span-4">
           <div className="sticky top-6 space-y-4">
-            {/* Mini mappa (coerente con i risultati filtrati) */}
-            {pins.length > 0 && <MapSection pins={pins} />}
+            {/* Mini mappa sopra (toggle ON) */}
+            {showMap && pins.length > 0 && <MapSection pins={pins} />}
 
             {/* Filtri auto-apply */}
             <FiltersClient
