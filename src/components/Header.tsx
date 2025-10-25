@@ -19,6 +19,9 @@ export default async function Header() {
           <Link href="/listings" className="hover:underline">
             Listings
           </Link>
+          <Link href="/about" className="hover:underline">
+            About
+          </Link>
           {user ? (
             <>
               <Link href="/listings/new" className="hover:underline">
