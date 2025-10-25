@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,31 +9,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum AnimalType {
-  DOG
-  CAT
-  BIRD
-  REPTILE
-  RABBIT
-  OTHER
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  keys     Key[]
+  sessions Session[]
+  listings Listing[]
 }
 
-enum ListingStatus {
-  LOST
-  FOUND
-  RESOLVED
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Key {
+  id             String  @id // es: "email:foo@bar.com"
+  userId         String
+  hashedPassword String?
+  primary        Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Listing {
-  id          String        @id @default(cuid())
+  id          String @id @default(cuid())
   title       String
   description String
-  animalType  AnimalType
-  status      ListingStatus @default(LOST)
-  city        String?
-  latitude    Float?
-  longitude   Float?
-  photos      String?       // singolo URL (per ora)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+
+  // ▼ prima erano enum → ora string
+  animalType String
+  status     String @default("LOST")
+
+  city      String?
+  latitude  Float?
+  longitude Float?
+  photos    String? // URL singola
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 }

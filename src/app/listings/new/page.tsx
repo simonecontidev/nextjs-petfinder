@@ -6,6 +6,7 @@ import { z } from "zod";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,14 +20,13 @@ const ListingSchema = z.object({
   animalType: z.enum(["DOG", "CAT", "BIRD", "REPTILE", "RABBIT", "OTHER"]),
   status: z.enum(["LOST", "FOUND", "RESOLVED"]).default("LOST"),
   city: z.string().trim().max(120).optional().or(z.literal("")),
-  // se vuoi ancora consentire URL manuale, manteniamo questo campo
+  // URL opzionale: se carichi un file, l’URL viene ignorato
   photos: z.string().url().optional().or(z.literal("")),
   latitude: z.coerce.number().optional(),
   longitude: z.coerce.number().optional(),
 });
 
 async function saveUploadedImage(file: File): Promise<string> {
-  // Validazioni base
   if (!ALLOWED_TYPES.includes(file.type)) {
     throw new Error("Tipo file non valido. Usa JPG/PNG/WebP.");
   }
@@ -34,13 +34,9 @@ async function saveUploadedImage(file: File): Promise<string> {
     throw new Error("File troppo grande (max 5MB).");
   }
 
-  // Estensione sicura
   const ext =
-    file.type === "image/png"
-      ? "png"
-      : file.type === "image/webp"
-      ? "webp"
-      : "jpg";
+    file.type === "image/png" ? "png" :
+    file.type === "image/webp" ? "webp" : "jpg";
 
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
@@ -51,24 +47,25 @@ async function saveUploadedImage(file: File): Promise<string> {
   const filePath = path.join(uploadDir, name);
   await fs.writeFile(filePath, buffer);
 
-  // URL pubblico servito da Next dalla cartella /public
   return `/uploads/${name}`;
 }
 
 async function createListing(formData: FormData) {
   "use server";
 
-  // 1) Prendiamo PRIMA il file
-  const file = formData.get("photo") as File | null; // input name="photo"
+  // ✅ protezione: solo loggati possono creare
+  const { user: actionUser } = await getSession();
+  if (!actionUser) redirect("/login");
 
-  // 2) Prendiamo gli altri campi come stringhe
+  const file = formData.get("photo") as File | null;
+
   const raw = {
     title: String(formData.get("title") ?? ""),
     description: String(formData.get("description") ?? ""),
     animalType: String(formData.get("animalType") ?? ""),
     status: String(formData.get("status") ?? ""),
     city: String(formData.get("city") ?? ""),
-    photos: String(formData.get("photos") ?? ""), // URL opzionale
+    photos: String(formData.get("photos") ?? ""),
     latitude: formData.get("latitude"),
     longitude: formData.get("longitude"),
   };
@@ -81,7 +78,6 @@ async function createListing(formData: FormData) {
     redirect(`/listings/new?error=${msg}`);
   }
 
-  // 3) Se c'è un file valido, salvalo; altrimenti usa l'URL se fornito
   let photoUrl: string | null = null;
   try {
     if (file && typeof file === "object" && file.size > 0) {
@@ -94,7 +90,6 @@ async function createListing(formData: FormData) {
     redirect(`/listings/new?error=${msg}`);
   }
 
-  // 4) Crea record nel DB
   const created = await db.listing.create({
     data: {
       title: parsed.data.title,
@@ -102,9 +97,10 @@ async function createListing(formData: FormData) {
       animalType: parsed.data.animalType,
       status: parsed.data.status,
       city: parsed.data.city || null,
-      photos: photoUrl, // salva l'URL dell’immagine
+      photos: photoUrl,
       latitude: parsed.data.latitude ?? null,
       longitude: parsed.data.longitude ?? null,
+      userId: actionUser.userId, // ✅ collega l’annuncio all’utente loggato
     },
     select: { id: true },
   });
@@ -118,6 +114,10 @@ export default async function NewListingPage({
 }: {
   searchParams?: { error?: string };
 }) {
+  // ✅ protezione: se non loggato, manda a /login
+  const { user } = await getSession();
+  if (!user) redirect("/login");
+
   const error = searchParams?.error ? decodeURIComponent(searchParams.error) : null;
 
   return (
@@ -130,7 +130,6 @@ export default async function NewListingPage({
         </div>
       )}
 
-      {/* Importante: multipart per upload file */}
       <form action={createListing} encType="multipart/form-data" className="space-y-5">
         <div>
           <label className="block text-sm font-medium mb-1">Titolo *</label>
@@ -160,7 +159,12 @@ export default async function NewListingPage({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Tipo *</label>
-            <select name="animalType" required className="w-full rounded-lg border px-3 py-2" defaultValue="DOG">
+            <select
+              name="animalType"
+              required
+              className="w-full rounded-lg border px-3 py-2"
+              defaultValue="DOG"
+            >
               <option value="DOG">Dog</option>
               <option value="CAT">Cat</option>
               <option value="BIRD">Bird</option>
@@ -172,7 +176,12 @@ export default async function NewListingPage({
 
           <div>
             <label className="block text-sm font-medium mb-1">Stato *</label>
-            <select name="status" required className="w-full rounded-lg border px-3 py-2" defaultValue="LOST">
+            <select
+              name="status"
+              required
+              className="w-full rounded-lg border px-3 py-2"
+              defaultValue="LOST"
+            >
               <option value="LOST">Lost</option>
               <option value="FOUND">Found</option>
               <option value="RESOLVED">Resolved</option>
@@ -181,11 +190,15 @@ export default async function NewListingPage({
 
           <div>
             <label className="block text-sm font-medium mb-1">Città</label>
-            <input name="city" className="w-full rounded-lg border px-3 py-2" placeholder="Es. Madrid" />
+            <input
+              name="city"
+              className="w-full rounded-lg border px-3 py-2"
+              placeholder="Es. Madrid"
+            />
           </div>
         </div>
 
-        {/* Upload file */}
+        {/* Upload file + URL alternativo */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Foto (file)</label>
@@ -213,11 +226,23 @@ export default async function NewListingPage({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Latitudine</label>
-            <input name="latitude" type="number" step="any" className="w-full rounded-lg border px-3 py-2" placeholder="Es. 40.4168" />
+            <input
+              name="latitude"
+              type="number"
+              step="any"
+              className="w-full rounded-lg border px-3 py-2"
+              placeholder="Es. 40.4168"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Longitudine</label>
-            <input name="longitude" type="number" step="any" className="w-full rounded-lg border px-3 py-2" placeholder="Es. -3.7038" />
+            <input
+              name="longitude"
+              type="number"
+              step="any"
+              className="w-full rounded-lg border px-3 py-2"
+              placeholder="Es. -3.7038"
+            />
           </div>
         </div>
 
