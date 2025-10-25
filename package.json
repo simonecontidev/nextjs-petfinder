@@ -10,12 +10,16 @@
     "prisma:seed": "node prisma/seed.mjs"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.4",
+    "@mui/material": "^7.3.4",
     "@prisma/client": "^6.18.0",
     "clsx": "^2.1.1",
     "gsap": "^3.13.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.548.0",
-    "next": "16.0.0",
+    "next": "^16.0.0",
     "next-intl": "^4.4.0",
     "next-themes": "^0.4.6",
     "react": "19.2.0",
