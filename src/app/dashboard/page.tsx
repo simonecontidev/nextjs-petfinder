@@ -33,11 +33,9 @@ export default async function DashboardPage() {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">La mia dashboard</h1>
-        <form action="/api/logout" method="post">
-          <button className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
-            Logout
-          </button>
-        </form>
+        <a href="/logout" className="text-sm underline">
+  Logout
+</a>
       </div>
 
       {myListings.length === 0 ? (

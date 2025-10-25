@@ -1,17 +1,26 @@
 import "./globals.css";
-import { ReactNode } from "react";
-import Providers from "@/components/Providers";
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { ThemeProvider } from "next-themes";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
-export const metadata = {
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
   title: "PetFinder",
-  description: "Find and report lost or found pets",
+  description: "Find and help lost pets near you",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="transition-colors duration-300 bg-white text-black dark:bg-gray-900 dark:text-white">
-        <Providers>{children}</Providers>
+      <body className={`${inter.className} transition-colors duration-300 bg-white text-black dark:bg-gray-900 dark:text-white`}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <Header />
+          <main className="min-h-[80vh]">{children}</main>
+          <Footer />
+        </ThemeProvider>
       </body>
     </html>
   );
