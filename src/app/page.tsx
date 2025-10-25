@@ -3,7 +3,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 export default function HomePage() {
   return (
     <main className="flex flex-col items-center justify-center min-h-screen text-center px-6">
-        <ThemeToggle />
+        
       <h1 className="text-5xl font-bold mb-6">🐾 PetFinder</h1>
 
       <p className="text-lg text-gray-600 max-w-xl mb-10">

@@ -18,8 +18,9 @@ export const lucia = new Lucia(adapter, {
     },
   },
   getUserAttributes: (user) => ({
-    email: user.email,
-  }),
+  userId: user.id,
+  email: user.email,
+})
 });
 
 export async function getSession() {
@@ -39,6 +40,7 @@ declare module "lucia" {
   interface Register {
     Lucia: typeof lucia;
     DatabaseUserAttributes: {
+      userId: string;
       email: string;
     };
     DatabaseSessionAttributes: {};

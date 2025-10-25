@@ -10,9 +10,12 @@ import crypto from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
-// Opzioni fisse (DB salva stringhe → validiamo qui)
+// Opzioni consentite (DB salva stringhe)
 const AnimalTypes = ["DOG", "CAT", "BIRD", "REPTILE", "RABBIT", "OTHER"] as const;
 const Statuses = ["LOST", "FOUND", "RESOLVED"] as const;
+
+// 👇 Tratta stringhe vuote come undefined per numeri opzionali
+const emptyToUndef = (v: unknown) => (v === "" ? undefined : v);
 
 const ListingSchema = z.object({
   id: z.string().min(1),
@@ -21,43 +24,39 @@ const ListingSchema = z.object({
   animalType: z.enum(AnimalTypes),
   status: z.enum(Statuses),
   city: z.string().trim().max(120).optional().or(z.literal("")),
-  photos: z.string().url().optional().or(z.literal("")), // URL alternativo
-  latitude: z.coerce.number().optional(),
-  longitude: z.coerce.number().optional(),
+  photos: z.string().url().optional().or(z.literal("")),
+  latitude: z.preprocess(emptyToUndef, z.number().optional()),
+  longitude: z.preprocess(emptyToUndef, z.number().optional()),
 });
 
-// upload locale (sviluppo/self-host). Su Vercel passiamo poi a Cloudinary/UploadThing.
+// Upload locale (sviluppo/self-host; in prod meglio un servizio esterno)
 const MAX_SIZE = 5 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
 
 async function saveUploadedImage(file: File): Promise<string> {
-  if (!ALLOWED_TYPES.includes(file.type)) throw new Error("Tipo file non valido (JPG/PNG/WebP).");
+  if (!ALLOWED.includes(file.type)) throw new Error("Tipo file non valido (JPG/PNG/WebP).");
   if (file.size > MAX_SIZE) throw new Error("File troppo grande (max 5MB).");
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const bytes = await file.arrayBuffer();
+  const buf = Buffer.from(await file.arrayBuffer());
   const name = `${crypto.randomBytes(16).toString("hex")}.${ext}`;
-
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await fs.mkdir(uploadDir, { recursive: true });
-  await fs.writeFile(path.join(uploadDir, name), Buffer.from(bytes));
-
+  const dir = path.join(process.cwd(), "public", "uploads");
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, name), buf);
   return `/uploads/${name}`;
 }
 
-// 🔧 Server Action: update sicuro (solo owner)
+// ✅ Server Action: update sicuro (owner-only)
 async function updateListing(formData: FormData) {
   "use server";
   const { user } = await getSession();
   if (!user) redirect("/login");
 
   const id = String(formData.get("id") ?? "");
-  // prendo il record per verificare owner + fallback foto
-  const existing = await db.listing.findUnique({ where: { id } });
-  if (!existing) notFound();
-  if (existing.userId !== user.userId) redirect("/dashboard");
+  const current = await db.listing.findUnique({ where: { id } });
+  if (!current) notFound();
+  if (current.userId !== user.userId) redirect("/dashboard");
 
-  // valori grezzi dal form
   const raw = {
     id,
     title: String(formData.get("title") ?? ""),
@@ -72,21 +71,22 @@ async function updateListing(formData: FormData) {
 
   const parsed = ListingSchema.safeParse(raw);
   if (!parsed.success) {
-    const msg = encodeURIComponent("Controlla i campi: " + (parsed.error.errors[0]?.message ?? "Errore"));
+    const firstMsg = parsed.error.issues[0]?.message ?? "Errore";
+    const msg = encodeURIComponent("Controlla i campi: " + firstMsg);
     redirect(`/listings/${id}/edit?error=${msg}`);
   }
 
-  // gestione immagine: file ha precedenza su URL; se nulla, mantieni esistente
+  // Immagine: priorità al file, poi URL, altrimenti mantieni l'attuale
   const file = formData.get("photo") as File | null;
-  let photoUrl = existing.photos ?? null;
+  let photoUrl = current.photos ?? null;
   try {
     if (file && typeof file === "object" && file.size > 0) {
       photoUrl = await saveUploadedImage(file);
     } else if (parsed.data.photos) {
       photoUrl = parsed.data.photos;
     }
-  } catch (e: any) {
-    const msg = encodeURIComponent(e?.message ?? "Errore upload immagine");
+  } catch (e: unknown) {
+    const msg = encodeURIComponent(e instanceof Error ? e.message : "Errore upload immagine");
     redirect(`/listings/${id}/edit?error=${msg}`);
   }
 
@@ -104,7 +104,6 @@ async function updateListing(formData: FormData) {
     },
   });
 
-  // revalida e torna al dettaglio
   revalidatePath("/listings");
   revalidatePath(`/listings/${id}`);
   revalidatePath("/dashboard");
@@ -114,7 +113,9 @@ async function updateListing(formData: FormData) {
 type Params = { id: string };
 
 export default async function EditListingPage(
-  props: { params: Params } | { params: Promise<Params> ; searchParams?: { error?: string } }
+  props:
+    | { params: Params; searchParams?: { error?: string } }
+    | { params: Promise<Params>; searchParams?: { error?: string } }
 ) {
   const p = "then" in props.params ? await props.params : props.params;
   const id = p?.id;
@@ -127,11 +128,10 @@ export default async function EditListingPage(
   if (!listing) notFound();
   if (listing.userId !== user.userId) redirect("/dashboard");
 
-  // error da querystring (opzionale)
-  // @ts-ignore
-  const error = (props as any).searchParams?.error
-    ? decodeURIComponent((props as any).searchParams.error)
-    : null;
+  const error =
+    "searchParams" in props && props.searchParams?.error
+      ? decodeURIComponent(props.searchParams.error!)
+      : null;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -146,7 +146,6 @@ export default async function EditListingPage(
       <form action={updateListing} encType="multipart/form-data" className="space-y-5">
         <input type="hidden" name="id" value={listing.id} />
 
-        {/* Titolo */}
         <div>
           <label className="block text-sm font-medium mb-1">Titolo *</label>
           <input
@@ -159,7 +158,6 @@ export default async function EditListingPage(
           />
         </div>
 
-        {/* Descrizione */}
         <div>
           <label className="block text-sm font-medium mb-1">Descrizione *</label>
           <textarea
@@ -173,7 +171,6 @@ export default async function EditListingPage(
           />
         </div>
 
-        {/* Tipo / Stato / Città */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Tipo *</label>
@@ -184,7 +181,9 @@ export default async function EditListingPage(
               className="w-full rounded-lg border px-3 py-2"
             >
               {AnimalTypes.map((a) => (
-                <option key={a} value={a}>{a}</option>
+                <option key={a} value={a}>
+                  {a}
+                </option>
               ))}
             </select>
           </div>
@@ -198,7 +197,9 @@ export default async function EditListingPage(
               className="w-full rounded-lg border px-3 py-2"
             >
               {Statuses.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
           </div>
@@ -213,7 +214,6 @@ export default async function EditListingPage(
           </div>
         </div>
 
-        {/* Foto attuale + Upload/URL */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-2">Foto attuale</label>
@@ -247,7 +247,6 @@ export default async function EditListingPage(
           </div>
         </div>
 
-        {/* Posizione */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Latitudine</label>
@@ -278,7 +277,10 @@ export default async function EditListingPage(
           >
             Salva modifiche
           </button>
-          <a href={`/listings/${listing.id}`} className="text-sm underline opacity-80 hover:opacity-100">
+          <a
+            href={`/listings/${listing.id}`}
+            className="text-sm underline opacity-80 hover:opacity-100"
+          >
             Annulla
           </a>
         </div>
