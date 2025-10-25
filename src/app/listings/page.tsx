@@ -1,23 +1,39 @@
 import { db } from "@/lib/db";
 import Link from "next/link";
+import MapSection from "@/components/MapSection";
 
-export const dynamic = "force-dynamic"; // sempre dati aggiornati
+export const dynamic = "force-dynamic";
+
+// tipo derivato dal modello Prisma
+type ListingModel = Awaited<ReturnType<typeof db.listing.findMany>>[number];
+type Pin = { id: string; lat: number; lng: number; title: string; city?: string | null };
 
 export default async function ListingsPage() {
-  const listings = await db.listing.findMany({
-    orderBy: { createdAt: "desc" },
-  });
+  const listings = await db.listing.findMany({ orderBy: { createdAt: "desc" } });
+
+  const pins: Pin[] = listings
+    .filter((l: ListingModel) => l.latitude != null && l.longitude != null)
+    .map((l: ListingModel) => ({
+      id: l.id,
+      lat: l.latitude as number,
+      lng: l.longitude as number,
+      title: l.title,
+      city: l.city ?? null,
+    }));
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
-      <h1 className="text-3xl font-bold mb-8">Pet Listings</h1>
+      <h1 className="text-3xl font-bold mb-6">Pet Listings</h1>
+
+      {/* Mappa client-side */}
+      <MapSection pins={pins} />
 
       {listings.length === 0 && (
-        <p className="text-gray-500">No listings found.</p>
+        <p className="text-gray-500 dark:text-gray-300">No listings found.</p>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {listings.map((item) => (
+        {listings.map((item: ListingModel) => (
           <Link
             key={item.id}
             href={`/listings/${item.id}`}
