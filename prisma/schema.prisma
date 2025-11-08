@@ -15,10 +15,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  keys      Key[]
-  sessions  Session[]
-  listings  Listing[]
-  comments  Comment[]        // ⬅️ back-relation
+  keys         Key[]
+  sessions     Session[]
+  listings     Listing[]
+  comments     Comment[]
+  commentLikes CommentLike[]
 }
 
 model Session {
@@ -32,7 +33,7 @@ model Session {
 }
 
 model Key {
-  id             String  @id // es: "email:foo@bar.com"
+  id             String  @id // e.g. "email:foo@bar.com"
   userId         String
   hashedPassword String?
   primary        Boolean @default(false)
@@ -43,25 +44,25 @@ model Key {
 }
 
 model Listing {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   title       String
   description String
 
-  // ▼ prima erano enum → ora string
+  // stored as strings
   animalType String
-  status     String   @default("LOST")
+  status     String @default("LOST")
 
-  city       String?
-  latitude   Float?
-  longitude  Float?
-  photos     String? // URL singola
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  city      String?
+  latitude  Float?
+  longitude Float?
+  photos    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  userId   String?
-  user     User?      @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 
-  comments Comment[]  // ⬅️ back-relation
+  comments Comment[]
 }
 
 model Comment {
@@ -71,10 +72,27 @@ model Comment {
   body      String
   createdAt DateTime @default(now())
 
-  // relations
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // likes relation
+  likes CommentLike[]
+
   @@index([listingId], map: "idx_comment_listing")
   @@index([userId], map: "idx_comment_user")
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // one like per user per comment
+  @@unique([userId, commentId], name: "user_comment_unique")
+  @@index([commentId])
+  @@index([userId])
 }

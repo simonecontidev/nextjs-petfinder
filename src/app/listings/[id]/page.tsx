@@ -17,38 +17,49 @@ function backTo(id: string, query?: string, hash = "#comments") {
 export default async function ListingDetailPage(
   props: { params: Params } | { params: Promise<Params> }
 ) {
-  // --- unwrap params (Next 16)
+  // Unwrap params (Next 16)
   const p =
     "then" in (props as any).params ? await (props as any).params : (props as any).params;
-  const id = p?.id as string | undefined;
+  const id = (p as Params)?.id;
   if (!id) notFound();
 
-  // user session (if logged in)
+  // current user session (if any)
   const { user } = await getSession();
+  const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
 
   // load listing
   const listing = await db.listing.findUnique({ where: { id } });
   if (!listing) notFound();
 
-  // owner?
-  const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
   const isOwner = !!authUserId && listing.userId === authUserId;
-
   const createdIso = new Date(listing.createdAt).toISOString();
 
-  // comments (newest first)
+  // COMMENTS (newest first) + likes data
+  // - include author
+  // - include like count
+  // - include whether current user liked (1 row if yes)
   const comments = await db.comment.findMany({
     where: { listingId: id },
-    include: { user: true },
+    include: {
+      user: true,
+      _count: { select: { likes: true } },
+      ...(authUserId
+        ? {
+            likes: {
+              where: { userId: authUserId },
+              select: { id: true },
+            },
+          }
+        : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
 
-  // -----------------------------
+  // ─────────────────────────────────────────
   // SERVER ACTIONS
-  // -----------------------------
+  // ─────────────────────────────────────────
   async function addComment(formData: FormData) {
     "use server";
-
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
     if (!authId) {
@@ -68,7 +79,6 @@ export default async function ListingDetailPage(
       redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too long")));
     }
 
-    // explicit connect
     await db.comment.create({
       data: {
         body,
@@ -82,7 +92,6 @@ export default async function ListingDetailPage(
 
   async function deleteComment(formData: FormData) {
     "use server";
-
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
     if (!authId) {
@@ -111,9 +120,34 @@ export default async function ListingDetailPage(
     redirect(backTo(id));
   }
 
-  // -----------------------------
-  // PAGE RETURN (outside actions)
-  // -----------------------------
+  // Simple, robust toggle: remove if exists, otherwise create
+  async function toggleLike(formData: FormData) {
+    "use server";
+    const { user } = await getSession();
+    const authId = (user as any)?.id ?? (user as any)?.userId;
+    if (!authId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
+    }
+
+    const commentId = String(formData.get("commentId") || "");
+    if (!commentId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
+    }
+
+    const res = await db.commentLike.deleteMany({
+      where: { userId: authId, commentId },
+    });
+
+    if (res.count === 0) {
+      await db.commentLike.create({ data: { userId: authId, commentId } });
+    }
+
+    redirect(backTo(id));
+  }
+
+  // ─────────────────────────────────────────
+  // PAGE RENDER
+  // ─────────────────────────────────────────
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <div className="flex items-start justify-between gap-4">
@@ -183,7 +217,7 @@ export default async function ListingDetailPage(
         </>
       ) : null}
 
-      {/* --- COMMENTS --- */}
+      {/* COMMENTS */}
       <section id="comments" className="mt-10">
         <h2 className="text-xl font-semibold">Comments ({comments.length})</h2>
 
@@ -213,34 +247,58 @@ export default async function ListingDetailPage(
         )}
 
         <div className="mt-6 space-y-4">
-          {comments.map((c) => (
-            <article key={c.id} className="rounded-lg border p-3">
-              <div className="mb-1 flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs dark:bg-gray-700">
-                    {c.user?.email?.[0]?.toUpperCase() || "U"}
-                  </span>
-                  <span className="opacity-80">{c.user?.email || "User"}</span>
-                </div>
-                <time className="opacity-60 text-xs">
-                  {new Date(c.createdAt).toLocaleString()}
-                </time>
-              </div>
-              <p className="whitespace-pre-wrap leading-relaxed">{c.body}</p>
+          {comments.map((c) => {
+            const likeCount = (c as any)._count?.likes ?? 0;
+            const likedByMe = !!(authUserId && (c as any).likes && (c as any).likes.length > 0);
 
-              {user && (authUserId === c.userId || isOwner) && (
-                <form action={deleteComment} className="mt-2">
-                  <input type="hidden" name="commentId" value={c.id} />
-                  <button
-                    className="text-xs opacity-70 underline hover:opacity-100"
-                    aria-label="Delete comment"
-                  >
-                    Delete
-                  </button>
-                </form>
-              )}
-            </article>
-          ))}
+            return (
+              <article key={c.id} className="rounded-lg border p-3">
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs dark:bg-gray-700">
+                      {c.user?.email?.[0]?.toUpperCase() || "U"}
+                    </span>
+                    <span className="opacity-80">{c.user?.email || "User"}</span>
+                  </div>
+                  <time className="opacity-60 text-xs">
+                    {new Date(c.createdAt).toLocaleString()}
+                  </time>
+                </div>
+
+                <p className="whitespace-pre-wrap leading-relaxed">{c.body}</p>
+
+                <div className="mt-2 flex items-center gap-4">
+                  {/* Like / Unlike */}
+                  {user ? (
+                    <form action={toggleLike}>
+                      <input type="hidden" name="commentId" value={c.id} />
+                      <button
+                        className="text-xs rounded border px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        aria-label={likedByMe ? "Unlike comment" : "Like comment"}
+                      >
+                        {likedByMe ? "💚 Liked" : "🤍 Like"} · {likeCount}
+                      </button>
+                    </form>
+                  ) : (
+                    <span className="text-xs opacity-70">❤️ {likeCount}</span>
+                  )}
+
+                  {/* Delete: author or listing owner */}
+                  {user && (authUserId === c.userId || isOwner) && (
+                    <form action={deleteComment}>
+                      <input type="hidden" name="commentId" value={c.id} />
+                      <button
+                        className="text-xs opacity-70 underline hover:opacity-100"
+                        aria-label="Delete comment"
+                      >
+                        Delete
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </article>
+            );
+          })}
 
           {comments.length === 0 && (
             <p className="opacity-70">No comments yet. Be the first to help!</p>
