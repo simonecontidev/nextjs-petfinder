@@ -15,9 +15,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  keys     Key[]
-  sessions Session[]
-  listings Listing[]
+  keys      Key[]
+  sessions  Session[]
+  listings  Listing[]
+  comments  Comment[]        // ⬅️ back-relation
 }
 
 model Session {
@@ -42,21 +43,38 @@ model Key {
 }
 
 model Listing {
-  id          String @id @default(cuid())
+  id          String   @id @default(cuid())
   title       String
   description String
 
   // ▼ prima erano enum → ora string
   animalType String
-  status     String @default("LOST")
+  status     String   @default("LOST")
 
-  city      String?
-  latitude  Float?
-  longitude Float?
-  photos    String? // URL singola
+  city       String?
+  latitude   Float?
+  longitude  Float?
+  photos     String? // URL singola
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  userId   String?
+  user     User?      @relation(fields: [userId], references: [id])
+
+  comments Comment[]  // ⬅️ back-relation
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  listingId String
+  userId    String
+  body      String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id])
+  // relations
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([listingId], map: "idx_comment_listing")
+  @@index([userId], map: "idx_comment_user")
 }

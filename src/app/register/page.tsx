@@ -1,4 +1,4 @@
-// app/(auth)/register/page.tsx  (adatta il path al tuo progetto)
+// app/(auth)/register/page.tsx
 import { db } from "@/lib/db";
 import { lucia, pwd } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -33,51 +33,52 @@ const COMMON_PASSWORDS = new Set([
 ]);
 
 // schema di validazione con zod
-const RegisterSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(1, "Email richiesta")
-    .email("Email non valida")
-    .max(254, "Email troppo lunga"),
-  password: z
-    .string()
-    .min(8, "Password minima 8 caratteri")
-    .max(72, "Password troppo lunga")
-    // almeno 1 minuscola, 1 maiuscola, 1 numero, 1 simbolo
-    .regex(/[a-z]/, "La password deve contenere almeno una lettera minuscola")
-    .regex(/[A-Z]/, "La password deve contenere almeno una lettera maiuscola")
-    .regex(/[0-9]/, "La password deve contenere almeno un numero")
-    .regex(/[^A-Za-z0-9]/, "La password deve contenere almeno un simbolo"),
-  confirmPassword: z.string().min(1, "Conferma password richiesta"),
-  accept: z.literal("on", {
-    errorMap: () => ({ message: "Devi accettare Termini e Privacy" }),
-  }),
-}).superRefine((data, ctx) => {
-  if (data.password !== data.confirmPassword) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Le password non coincidono",
-      path: ["confirmPassword"],
-    });
-  }
-  if (COMMON_PASSWORDS.has(data.password.toLowerCase())) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "La password scelta è troppo comune",
-      path: ["password"],
-    });
-  }
-  const domain = data.email.split("@")[1] || "";
-  if (DISPOSABLE_DOMAINS.has(domain)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Dominio email non accettato",
-      path: ["email"],
-    });
-  }
-});
+const RegisterSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(1, "Email richiesta")
+      .email("Email non valida")
+      .max(254, "Email troppo lunga"),
+    password: z
+      .string()
+      .min(8, "Password minima 8 caratteri")
+      .max(72, "Password troppo lunga")
+      .regex(/[a-z]/, "La password deve contenere almeno una lettera minuscola")
+      .regex(/[A-Z]/, "La password deve contenere almeno una lettera maiuscola")
+      .regex(/[0-9]/, "La password deve contenere almeno un numero")
+      .regex(/[^A-Za-z0-9]/, "La password deve contenere almeno un simbolo"),
+    confirmPassword: z.string().min(1, "Conferma password richiesta"),
+    accept: z.literal("on", {
+      errorMap: () => ({ message: "Devi accettare Termini e Privacy" }),
+    }),
+  })
+  .superRefine((data, ctx) => {
+    if (data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Le password non coincidono",
+        path: ["confirmPassword"],
+      });
+    }
+    if (COMMON_PASSWORDS.has(data.password.toLowerCase())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "La password scelta è troppo comune",
+        path: ["password"],
+      });
+    }
+    const domain = data.email.split("@")[1] || "";
+    if (DISPOSABLE_DOMAINS.has(domain)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Dominio email non accettato",
+        path: ["email"],
+      });
+    }
+  });
 
 async function register(formData: FormData) {
   "use server";
@@ -93,8 +94,11 @@ async function register(formData: FormData) {
   // valida con zod
   const parsed = RegisterSchema.safeParse(raw);
   if (!parsed.success) {
-    // prendi il primo errore “umano”
-    const first = parsed.error.errors[0]?.message || "Dati non validi";
+    // ✅ usa issues (non errors) + fallback robusto
+    const first =
+      parsed.error.issues?.[0]?.message ??
+      parsed.error.message ??
+      "Input not valid";
     fail(first);
   }
 
@@ -102,15 +106,11 @@ async function register(formData: FormData) {
 
   // check esistenza utente
   const existing = await db.user.findUnique({ where: { email } });
-  if (existing) {
-    fail("Email già registrata");
-  }
+  if (existing) fail("Email già registrata");
 
   try {
-    // crea utente + key in transazione
-    const user = await db.user.create({
-      data: { email },
-    });
+    // crea utente + key
+    const user = await db.user.create({ data: { email } });
 
     await db.key.create({
       data: {
@@ -128,7 +128,7 @@ async function register(formData: FormData) {
 
     redirect("/dashboard");
   } catch (err: any) {
-    // gestisci unique constraint Prisma (in caso di race)
+    // gestisci unique constraint Prisma (race)
     if (err?.code === "P2002") {
       fail("Email già registrata");
     }
@@ -140,25 +140,25 @@ async function register(formData: FormData) {
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams?: { error?: string };
+  // ⬇️ Next 16: searchParams è una Promise in Server Components
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const error = searchParams?.error ? decodeURIComponent(searchParams.error) : null;
+  const sp = await searchParams; // ⬅️ unwrap
+  const error = sp?.error ? decodeURIComponent(String(sp.error)) : null;
 
   return (
     <main className="mx-auto max-w-md px-6 py-12">
       <h1 className="text-2xl font-bold mb-4">Crea account</h1>
 
       {error && (
-        <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
           {error}
         </p>
       )}
 
       <form action={register} className="space-y-4" noValidate>
         <div>
-          <label htmlFor="email" className="mb-1 block text-sm font-medium">
-            Email
-          </label>
+          <label htmlFor="email" className="mb-1 block text-sm font-medium">Email</label>
           <input
             id="email"
             name="email"
@@ -172,9 +172,7 @@ export default async function RegisterPage({
         </div>
 
         <div>
-          <label htmlFor="password" className="mb-1 block text-sm font-medium">
-            Password
-          </label>
+          <label htmlFor="password" className="mb-1 block text-sm font-medium">Password</label>
           <input
             id="password"
             name="password"
@@ -202,28 +200,16 @@ export default async function RegisterPage({
         </div>
 
         <label className="flex items-start gap-2 text-sm">
-          <input
-            name="accept"
-            type="checkbox"
-            className="mt-1"
-            required
-          />
+          <input name="accept" type="checkbox" className="mt-1" required />
           <span>
             Accetto i{" "}
-            <a href="/terms" className="underline" target="_blank" rel="noreferrer">
-              Termini
-            </a>{" "}
+            <a href="/terms" className="underline" target="_blank" rel="noreferrer">Termini</a>{" "}
             e la{" "}
-            <a href="/privacy" className="underline" target="_blank" rel="noreferrer">
-              Privacy Policy
-            </a>
-            .
+            <a href="/privacy" className="underline" target="_blank" rel="noreferrer">Privacy Policy</a>.
           </span>
         </label>
 
-        <button
-          className="w-full rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
-        >
+        <button className="w-full rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
           Registrati
         </button>
       </form>
@@ -232,7 +218,6 @@ export default async function RegisterPage({
         Hai già un account? <a href="/login" className="underline">Login</a>
       </p>
 
-      {/* Suggerimenti password */}
       <div className="mt-6 rounded-lg border p-3 text-xs text-gray-600">
         Suggerimenti: usa almeno 8 caratteri, includi maiuscole, minuscole, numeri e simboli. Evita password comuni.
       </div>

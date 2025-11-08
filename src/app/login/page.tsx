@@ -1,3 +1,4 @@
+// src/app/login/page.tsx
 import { db } from "@/lib/db";
 import { lucia, pwd } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -19,28 +20,50 @@ async function login(formData: FormData) {
   const ok = await pwd.verify(key.hashedPassword, password);
   if (!ok) redirect("/login?error=" + encodeURIComponent("Credenziali non valide"));
 
-  const session = await lucia.createSession(user.id, { });
+  const session = await lucia.createSession(user.id, {});
   const cookie = lucia.createSessionCookie(session.id);
+
+  // In Next 16 le Dynamic APIs sono async: usa await
   (await cookies()).set(cookie.name, cookie.value, cookie.attributes);
 
   redirect("/dashboard");
 }
 
-export default async function LoginPage({ searchParams }: { searchParams?: { error?: string } }) {
-  const error = searchParams?.error ? decodeURIComponent(searchParams.error) : null;
+export default async function LoginPage({
+  searchParams,
+}: {
+  // ⬇️ In Next 16 è una Promise
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const sp = await searchParams; // ⬅️ unwrap
+  const error = sp?.error ? decodeURIComponent(String(sp.error)) : null;
+
   return (
     <main className="mx-auto max-w-md px-6 py-12">
       <h1 className="text-2xl font-bold mb-4">Login</h1>
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+
+      {error && <p className="mb-3 text-sm text-red-600" role="alert">{error}</p>}
+
       <form action={login} className="space-y-4">
-        <input name="email" type="email" required placeholder="Email"
-          className="w-full rounded-lg border px-3 py-2" />
-        <input name="password" type="password" required placeholder="Password"
-          className="w-full rounded-lg border px-3 py-2" />
+        <input
+          name="email"
+          type="email"
+          required
+          placeholder="Email"
+          className="w-full rounded-lg border px-3 py-2"
+        />
+        <input
+          name="password"
+          type="password"
+          required
+          placeholder="Password"
+          className="w-full rounded-lg border px-3 py-2"
+        />
         <button className="rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
           Entra
         </button>
       </form>
+
       <p className="mt-3 text-sm">
         Nuovo utente? <a href="/register" className="underline">Registrati</a>
       </p>
