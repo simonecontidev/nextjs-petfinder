@@ -27,6 +27,49 @@ async function delAction(formData: FormData) {
 }
 
 // ───────────────────────────────────────────────────────────
+// Server Action: Save basic profile info
+// ───────────────────────────────────────────────────────────
+async function saveProfile(formData: FormData) {
+  "use server";
+
+  const { user } = await getSession();
+  const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
+  if (!authUserId) redirect("/login");
+
+  const name = String(formData.get("name") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
+  const city = String(formData.get("city") || "").trim();
+  const bio = String(formData.get("bio") || "").trim();
+
+  // mini validazioni soft (niente zod qui per restare snelli)
+  if (name.length > 120) {
+    redirect(`/dashboard?err=${encodeURIComponent("Name too long")}`);
+  }
+  if (phone.length > 60) {
+    redirect(`/dashboard?err=${encodeURIComponent("Phone too long")}`);
+  }
+  if (city.length > 120) {
+    redirect(`/dashboard?err=${encodeURIComponent("City too long")}`);
+  }
+  if (bio.length > 1000) {
+    redirect(`/dashboard?err=${encodeURIComponent("Bio too long")}`);
+  }
+
+  await db.user.update({
+    where: { id: authUserId },
+    data: {
+      name: name || null,
+      phone: phone || null,
+      city: city || null,
+      bio: bio || null,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  redirect(`/dashboard?ok=${encodeURIComponent("Profile updated")}`);
+}
+
+// ───────────────────────────────────────────────────────────
 // Pagina Dashboard
 // ───────────────────────────────────────────────────────────
 type StatusFilter = "ALL" | "LOST" | "FOUND" | "RESOLVED";
@@ -34,12 +77,22 @@ type StatusFilter = "ALL" | "LOST" | "FOUND" | "RESOLVED";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: { status?: string };
+  searchParams?: { status?: string; ok?: string; err?: string };
 }) {
   // Auth
   const { user } = await getSession();
   const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
   if (!authUserId) redirect("/login");
+
+  // Profile corrente (per precompilare)
+  const me = await db.user.findUnique({
+    where: { id: authUserId },
+    select: { email: true, name: true, phone: true, city: true, bio: true },
+  });
+
+  // Feedback da azioni
+  const okMsg = searchParams?.ok ? decodeURIComponent(searchParams.ok) : null;
+  const errMsg = searchParams?.err ? decodeURIComponent(searchParams.err) : null;
 
   // Filtro status robusto
   const rawStatus = (searchParams?.status || "").toString().toUpperCase();
@@ -58,7 +111,6 @@ export default async function DashboardPage({
   });
 
   // Messaggi ricevuti per i miei listing (ultimi 20)
-  // ⚠️ Niente include: fromUser (non esiste la relazione nel tuo schema attuale)
   const myMessages = await db.contactMessage.findMany({
     where: { listing: { userId: authUserId } },
     include: {
@@ -85,13 +137,27 @@ export default async function DashboardPage({
         </a>
       </div>
 
+      {/* Feedback */}
+      {okMsg && (
+        <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-800">
+          {okMsg}
+        </div>
+      )}
+      {errMsg && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {errMsg}
+        </div>
+      )}
+
+     
+
       {/* Filtri */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         {filters.map(({ label, value }) => {
           const isActive = activeFilter === value;
           const base =
             "inline-flex items-center rounded-full border px-4 py-1 text-sm font-medium transition";
-          const active =
+        const active =
             "bg-amber-600 text-white border-amber-600 shadow-sm";
           const inactive =
             "bg-white text-gray-700 border-gray-200 hover:border-amber-500 hover:text-amber-600 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:border-amber-400";
@@ -242,6 +308,76 @@ export default async function DashboardPage({
             ))}
           </ul>
         )}
+      </section>
+
+
+
+       {/* ───────────────── Basic info ───────────────── */}
+      <section aria-labelledby="basic-info" className="m-10">
+        <h2 id="basic-info" className="text-xl font-semibold mb-4">
+          Basic info
+        </h2>
+
+        <form action={saveProfile} className="grid gap-4 rounded-2xl border bg-white p-4 dark:bg-gray-800">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">Email</label>
+              <input
+                value={(me?.email ?? "") as string}
+                disabled
+                className="w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Name</label>
+              <input
+                name="name"
+                defaultValue={me?.name ?? ""}
+                placeholder="Your full name"
+                className="w-full rounded-lg border px-3 py-2"
+                maxLength={120}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Phone</label>
+              <input
+                name="phone"
+                defaultValue={me?.phone ?? ""}
+                placeholder="+34 ..."
+                className="w-full rounded-lg border px-3 py-2"
+                maxLength={60}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">City</label>
+              <input
+                name="city"
+                defaultValue={me?.city ?? ""}
+                placeholder="Madrid"
+                className="w-full rounded-lg border px-3 py-2"
+                maxLength={120}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Bio / Notes</label>
+            <textarea
+              name="bio"
+              defaultValue={me?.bio ?? ""}
+              rows={4}
+              placeholder="Optional notes: preferred contact times, languages..."
+              className="w-full rounded-lg border px-3 py-2"
+              maxLength={1000}
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button type="submit" className="btn-primary">
+              Save profile
+            </button>
+          </div>
+        </form>
       </section>
     </main>
   );

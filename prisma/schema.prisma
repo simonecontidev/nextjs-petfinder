@@ -14,6 +14,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // basic profile fields
+  name   String?
+  phone  String?
+  city   String?
+  bio    String?
+
   keys         Key[]
   sessions     Session[]
   listings     Listing[]
