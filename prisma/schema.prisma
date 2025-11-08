@@ -1,5 +1,4 @@
 // prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -33,7 +32,7 @@ model Session {
 }
 
 model Key {
-  id             String  @id // e.g. "email:foo@bar.com"
+  id             String  @id // es: "email:foo@bar.com"
   userId         String
   hashedPassword String?
   primary        Boolean @default(false)
@@ -44,25 +43,26 @@ model Key {
 }
 
 model Listing {
-  id          String @id @default(cuid())
+  id          String   @id @default(cuid())
   title       String
   description String
 
-  // stored as strings
+  // salvati come string
   animalType String
-  status     String @default("LOST")
+  status     String   @default("LOST")
 
-  city      String?
-  latitude  Float?
-  longitude Float?
-  photos    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  city       String?
+  latitude   Float?
+  longitude  Float?
+  photos     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   userId String?
   user   User?   @relation(fields: [userId], references: [id])
 
   comments Comment[]
+  messages ContactMessage[]   // ⬅️ NUOVO: messaggi ricevuti per questo listing
 }
 
 model Comment {
@@ -75,7 +75,6 @@ model Comment {
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // likes relation
   likes CommentLike[]
 
   @@index([listingId], map: "idx_comment_listing")
@@ -91,8 +90,22 @@ model CommentLike {
   comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // one like per user per comment
   @@unique([userId, commentId], name: "user_comment_unique")
   @@index([commentId])
   @@index([userId])
+}
+
+// ⬇️ NUOVO MODELLO
+model ContactMessage {
+  id        String   @id @default(cuid())
+  listingId String
+  name      String?
+  email     String?
+  phone     String?
+  body      String
+  createdAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId], map: "idx_contact_message_listing")
 }

@@ -53,9 +53,10 @@ async function saveUploadedImage(file: File): Promise<string> {
 async function createListing(formData: FormData) {
   "use server";
 
-  // ✅ protezione: solo loggati possono creare
+  // ✅ Solo loggati
   const { user: actionUser } = await getSession();
-  if (!actionUser) redirect("/login");
+  const authUserId = (actionUser as any)?.id ?? (actionUser as any)?.userId ?? null;
+  if (!authUserId) redirect("/login");
 
   const file = formData.get("photo") as File | null;
 
@@ -90,22 +91,24 @@ async function createListing(formData: FormData) {
     redirect(`/listings/new?error=${msg}`);
   }
 
+  // ✅ CREA collegando l'utente con relation (più sicuro di settare direttamente userId)
   const created = await db.listing.create({
     data: {
       title: parsed.data.title,
       description: parsed.data.description,
       animalType: parsed.data.animalType,
-      status: parsed.data.status,
+      status: parsed.data.status || "LOST",
       city: parsed.data.city || null,
       photos: photoUrl,
-      latitude: parsed.data.latitude ?? null,
-      longitude: parsed.data.longitude ?? null,
-      userId: actionUser.userId, // ✅ collega l’annuncio all’utente loggato
+      latitude: Number.isFinite(parsed.data.latitude as any) ? parsed.data.latitude! : null,
+      longitude: Number.isFinite(parsed.data.longitude as any) ? parsed.data.longitude! : null,
+      user: { connect: { id: authUserId } },
     },
     select: { id: true },
   });
 
   revalidatePath("/listings");
+  revalidatePath("/dashboard");
   redirect(`/listings/${created.id}`);
 }
 
@@ -116,7 +119,8 @@ export default async function NewListingPage({
 }) {
   // ✅ protezione: se non loggato, manda a /login
   const { user } = await getSession();
-  if (!user) redirect("/login");
+  const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
+  if (!authUserId) redirect("/login");
 
   const error = searchParams?.error ? decodeURIComponent(searchParams.error) : null;
 

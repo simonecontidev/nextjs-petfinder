@@ -14,9 +14,12 @@ async function delAction(formData: FormData) {
   const { user } = await getSession();
   if (!user) redirect("/login");
 
+  const authUserId = (user as any)?.id ?? (user as any)?.userId;
+  if (!authUserId) redirect("/login");
+
   // Elimina solo se è owner
   await db.listing.deleteMany({
-    where: { id, userId: user.userId },
+    where: { id, userId: authUserId },
   });
 
   revalidatePath("/dashboard");
@@ -32,24 +35,27 @@ export default async function DashboardPage({
   const { user } = await getSession();
   if (!user) redirect("/login");
 
+  const authUserId = (user as any)?.id ?? (user as any)?.userId;
+  if (!authUserId) redirect("/login");
+
   const rawStatus = searchParams?.status;
   const normalizedStatus =
     typeof rawStatus === "string" ? rawStatus.toUpperCase() : undefined;
   const allowedStatuses = new Set(["LOST", "FOUND"]);
   const activeFilter = allowedStatuses.has(normalizedStatus ?? "")
-    ? normalizedStatus!
+    ? (normalizedStatus as "LOST" | "FOUND")
     : "ALL";
 
   const myListings = await db.listing.findMany({
     where: {
-      userId: user.userId,
+      userId: authUserId,
       ...(activeFilter === "ALL" ? {} : { status: activeFilter }),
     },
     orderBy: { createdAt: "desc" },
   });
 
   const filters: Array<{ label: string; value: "ALL" | "LOST" | "FOUND" }> = [
-    { label: "Tutti", value: "ALL" },
+    { label: "All", value: "ALL" },
     { label: "Lost", value: "LOST" },
     { label: "Found", value: "FOUND" },
   ];
@@ -57,7 +63,7 @@ export default async function DashboardPage({
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">La mia Dashboard</h1>
+        <h1 className="text-2xl font-bold">My Dashboard</h1>
         <a href="/logout" className="text-sm underline">
           Logout
         </a>
@@ -75,16 +81,8 @@ export default async function DashboardPage({
           return (
             <Link
               key={value}
-              href={
-                value === "ALL"
-                  ? "/dashboard"
-                  : `/dashboard?status=${value}`
-              }
-              className={`${baseClasses} ${
-                isActive
-                  ? activeClasses
-                  : inactiveClasses
-              }`}
+              href={value === "ALL" ? "/dashboard" : `/dashboard?status=${value}`}
+              className={`${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
             >
               {label}
             </Link>
@@ -94,12 +92,12 @@ export default async function DashboardPage({
 
       {myListings.length === 0 ? (
         <p className="text-gray-500 dark:text-gray-300">
-          Nessun annuncio per questo filtro.
+          No listings for this filter.
           {activeFilter === "ALL" ? (
             <>
               {" "}
               <a className="underline" href="/listings/new">
-                Crea il primo →
+                Create the first →
               </a>
             </>
           ) : null}
@@ -139,7 +137,6 @@ export default async function DashboardPage({
                   </div>
 
                   <div className="flex flex-col items-end gap-2">
-                    {/* 🔹 Pulsante Edit */}
                     <Link
                       href={`/listings/${l.id}/edit`}
                       className="text-sm rounded border px-2 py-1 hover:bg-blue-50 dark:hover:bg-gray-700"
@@ -147,7 +144,6 @@ export default async function DashboardPage({
                       Edit
                     </Link>
 
-                    {/* 🔹 Pulsante Delete */}
                     <form action={delAction}>
                       <input type="hidden" name="id" value={l.id} />
                       <button

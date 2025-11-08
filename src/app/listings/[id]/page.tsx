@@ -17,27 +17,28 @@ function backTo(id: string, query?: string, hash = "#comments") {
 export default async function ListingDetailPage(
   props: { params: Params } | { params: Promise<Params> }
 ) {
-  // Unwrap params (Next 16)
+  // --- unwrap params (Next 16)
   const p =
     "then" in (props as any).params ? await (props as any).params : (props as any).params;
   const id = (p as Params)?.id;
   if (!id) notFound();
 
-  // current user session (if any)
+  // current user
   const { user } = await getSession();
   const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
+  const authEmail = (user as any)?.email ?? null;
 
-  // load listing
-  const listing = await db.listing.findUnique({ where: { id } });
+  // load listing (+owner for contact)
+  const listing = await db.listing.findUnique({
+    where: { id },
+    include: { user: true },
+  });
   if (!listing) notFound();
 
   const isOwner = !!authUserId && listing.userId === authUserId;
   const createdIso = new Date(listing.createdAt).toISOString();
 
-  // COMMENTS (newest first) + likes data
-  // - include author
-  // - include like count
-  // - include whether current user liked (1 row if yes)
+  // comments (newest first) with like counts + whether I liked
   const comments = await db.comment.findMany({
     where: { listingId: id },
     include: {
@@ -62,22 +63,14 @@ export default async function ListingDetailPage(
     "use server";
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
-    if (!authId) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
-    }
+    if (!authId) redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
 
     const listingId = String(formData.get("listingId") || "");
     const body = String(formData.get("body") || "").trim();
 
-    if (!listingId || listingId !== id) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
-    }
-    if (body.length < 2) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too short")));
-    }
-    if (body.length > 2000) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too long")));
-    }
+    if (!listingId || listingId !== id) redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
+    if (body.length < 2) redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too short")));
+    if (body.length > 2000) redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too long")));
 
     await db.comment.create({
       data: {
@@ -94,59 +87,77 @@ export default async function ListingDetailPage(
     "use server";
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
-    if (!authId) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized")));
-    }
+    if (!authId) redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized")));
 
     const commentId = String(formData.get("commentId") || "");
-    if (!commentId) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
-    }
+    if (!commentId) redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
 
-    const c = await db.comment.findUnique({
-      where: { id: commentId },
-      include: { listing: true },
-    });
-    if (!c || c.listingId !== id) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Comment not found")));
-    }
+    const c = await db.comment.findUnique({ where: { id: commentId }, include: { listing: true } });
+    if (!c || c.listingId !== id) redirect(backTo(id, "?error=" + encodeURIComponent("Comment not found")));
 
     const canDelete = c.userId === authId || c.listing.userId === authId;
-    if (!canDelete) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized")));
-    }
+    if (!canDelete) redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized")));
 
     await db.comment.delete({ where: { id: commentId } });
     redirect(backTo(id));
   }
 
-  // Simple, robust toggle: remove if exists, otherwise create
+  // Like toggle (simple remove-or-create)
   async function toggleLike(formData: FormData) {
     "use server";
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
-    if (!authId) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
-    }
+    if (!authId) redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
 
     const commentId = String(formData.get("commentId") || "");
-    if (!commentId) {
-      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
-    }
+    if (!commentId) redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
 
-    const res = await db.commentLike.deleteMany({
-      where: { userId: authId, commentId },
-    });
-
+    const res = await db.commentLike.deleteMany({ where: { userId: authId, commentId } });
     if (res.count === 0) {
       await db.commentLike.create({ data: { userId: authId, commentId } });
     }
-
     redirect(backTo(id));
   }
 
+  // CONTACT OWNER – saves Message to DB (no email required)
+  async function sendMessage(formData: FormData) {
+    "use server";
+    const { user } = await getSession();
+    const authId = (user as any)?.id ?? (user as any)?.userId ?? null;
+    const authEmail = (user as any)?.email ?? null;
+
+    const name = String(formData.get("name") || "").trim();
+    const email = String(formData.get("email") || "").trim();
+    const phone = String(formData.get("phone") || "").trim();
+    const body = String(formData.get("body") || "").trim();
+
+    if (body.length < 10) {
+      redirect(`/listings/${id}?error=${encodeURIComponent("Message is too short")}#contact`);
+    }
+
+    // If user is logged, email can be optional; if guest, require email.
+    if (!authId && !email) {
+      redirect(`/listings/${id}?error=${encodeURIComponent("Email is required")}#contact`);
+    }
+
+    await db.message.create({
+      data: {
+        listingId: id,
+        senderUserId: authId,
+        senderName: name || null,
+        senderEmail: authEmail || email || null,
+        phone: phone || null,
+        body,
+      },
+    });
+
+    // (Email optional – you commented out the nodemailer part, so we skip it)
+
+    redirect(`/listings/${id}?ok=${encodeURIComponent("Message sent")}#contact`);
+  }
+
   // ─────────────────────────────────────────
-  // PAGE RENDER
+  // PAGE
   // ─────────────────────────────────────────
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -217,6 +228,67 @@ export default async function ListingDetailPage(
         </>
       ) : null}
 
+      {/* CONTACT OWNER */}
+      <section id="contact" className="mt-10">
+        <h2 className="text-xl font-semibold">Contact the owner</h2>
+        <p className="mt-1 text-sm opacity-80">
+          Your message will be sent to the owner of this listing.
+        </p>
+
+        <form action={sendMessage} className="mt-4 grid gap-3 sm:grid-cols-2">
+          {/* If logged, we can prefill name/email via server if you prefer; keep inputs generic */}
+          <div className="sm:col-span-1">
+            <label className="mb-1 block text-sm opacity-80">Name (optional)</label>
+            <input
+              name="name"
+              type="text"
+              placeholder="Your name"
+              className="w-full rounded-lg border px-3 py-2"
+            />
+          </div>
+
+          <div className="sm:col-span-1">
+            <label className="mb-1 block text-sm opacity-80">Email {authUserId ? "(optional)" : "(required)"}</label>
+            <input
+              name="email"
+              type="email"
+              placeholder={authEmail || "you@example.com"}
+              className="w-full rounded-lg border px-3 py-2"
+              defaultValue={authEmail || ""}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm opacity-80">Phone (optional)</label>
+            <input
+              name="phone"
+              type="tel"
+              placeholder="+34 ..."
+              className="w-full rounded-lg border px-3 py-2"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm opacity-80">Message</label>
+            <textarea
+              name="body"
+              required
+              minLength={10}
+              maxLength={2000}
+              placeholder="Write a clear message with useful details (where/when you saw the pet, contact info, etc.)"
+              className="w-full rounded-lg border px-3 py-2"
+              rows={4}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <button className="rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
+              Send message
+            </button>
+          </div>
+        </form>
+      </section>
+
       {/* COMMENTS */}
       <section id="comments" className="mt-10">
         <h2 className="text-xl font-semibold">Comments ({comments.length})</h2>
@@ -247,9 +319,9 @@ export default async function ListingDetailPage(
         )}
 
         <div className="mt-6 space-y-4">
-          {comments.map((c) => {
-            const likeCount = (c as any)._count?.likes ?? 0;
-            const likedByMe = !!(authUserId && (c as any).likes && (c as any).likes.length > 0);
+          {comments.map((c: any) => {
+            const likeCount = c._count?.likes ?? 0;
+            const likedByMe = !!(authUserId && c.likes && c.likes.length > 0);
 
             return (
               <article key={c.id} className="rounded-lg border p-3">
@@ -260,15 +332,12 @@ export default async function ListingDetailPage(
                     </span>
                     <span className="opacity-80">{c.user?.email || "User"}</span>
                   </div>
-                  <time className="opacity-60 text-xs">
-                    {new Date(c.createdAt).toLocaleString()}
-                  </time>
+                  <time className="opacity-60 text-xs">{new Date(c.createdAt).toLocaleString()}</time>
                 </div>
 
                 <p className="whitespace-pre-wrap leading-relaxed">{c.body}</p>
 
                 <div className="mt-2 flex items-center gap-4">
-                  {/* Like / Unlike */}
                   {user ? (
                     <form action={toggleLike}>
                       <input type="hidden" name="commentId" value={c.id} />
@@ -283,14 +352,10 @@ export default async function ListingDetailPage(
                     <span className="text-xs opacity-70">❤️ {likeCount}</span>
                   )}
 
-                  {/* Delete: author or listing owner */}
                   {user && (authUserId === c.userId || isOwner) && (
                     <form action={deleteComment}>
                       <input type="hidden" name="commentId" value={c.id} />
-                      <button
-                        className="text-xs opacity-70 underline hover:opacity-100"
-                        aria-label="Delete comment"
-                      >
+                      <button className="text-xs opacity-70 underline hover:opacity-100" aria-label="Delete comment">
                         Delete
                       </button>
                     </form>
