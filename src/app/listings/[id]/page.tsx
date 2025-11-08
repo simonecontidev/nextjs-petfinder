@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 type Params = { id: string };
 
-function backTo(id: string, query?: string, hash = "#comments") {
+function backTo(id: string, query?: string, hash = "") {
   return `/listings/${id}${query ? query : ""}${hash}`;
 }
 
@@ -20,25 +20,23 @@ export default async function ListingDetailPage(
   // --- unwrap params (Next 16)
   const p =
     "then" in (props as any).params ? await (props as any).params : (props as any).params;
-  const id = (p as Params)?.id;
+  const id = p?.id as string | undefined;
   if (!id) notFound();
 
-  // current user
+  // user session (if logged in)
   const { user } = await getSession();
-  const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
-  const authEmail = (user as any)?.email ?? null;
 
-  // load listing (+owner for contact)
-  const listing = await db.listing.findUnique({
-    where: { id },
-    include: { user: true },
-  });
+  // load listing
+  const listing = await db.listing.findUnique({ where: { id } });
   if (!listing) notFound();
 
+  // owner?
+  const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
   const isOwner = !!authUserId && listing.userId === authUserId;
+
   const createdIso = new Date(listing.createdAt).toISOString();
 
-  // comments (newest first) with like counts + whether I liked
+  // comments (newest first) con conteggio like e "liked by me"
   const comments = await db.comment.findMany({
     where: { listingId: id },
     include: {
@@ -56,21 +54,30 @@ export default async function ListingDetailPage(
     orderBy: { createdAt: "desc" },
   });
 
-  // ─────────────────────────────────────────
+  // -----------------------------
   // SERVER ACTIONS
-  // ─────────────────────────────────────────
+  // -----------------------------
   async function addComment(formData: FormData) {
     "use server";
+
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
-    if (!authId) redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
+    if (!authId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in"), "#comments"));
+    }
 
     const listingId = String(formData.get("listingId") || "");
     const body = String(formData.get("body") || "").trim();
 
-    if (!listingId || listingId !== id) redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
-    if (body.length < 2) redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too short")));
-    if (body.length > 2000) redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too long")));
+    if (!listingId || listingId !== id) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request"), "#comments"));
+    }
+    if (body.length < 2) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too short"), "#comments"));
+    }
+    if (body.length > 2000) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Comment is too long"), "#comments"));
+    }
 
     await db.comment.create({
       data: {
@@ -80,85 +87,104 @@ export default async function ListingDetailPage(
       },
     });
 
-    redirect(backTo(id));
+    redirect(backTo(id, undefined, "#comments"));
   }
 
   async function deleteComment(formData: FormData) {
     "use server";
+
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
-    if (!authId) redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized")));
+    if (!authId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized"), "#comments"));
+    }
 
     const commentId = String(formData.get("commentId") || "");
-    if (!commentId) redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
+    if (!commentId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request"), "#comments"));
+    }
 
-    const c = await db.comment.findUnique({ where: { id: commentId }, include: { listing: true } });
-    if (!c || c.listingId !== id) redirect(backTo(id, "?error=" + encodeURIComponent("Comment not found")));
+    const c = await db.comment.findUnique({
+      where: { id: commentId },
+      include: { listing: true },
+    });
+    if (!c || c.listingId !== id) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Comment not found"), "#comments"));
+    }
 
     const canDelete = c.userId === authId || c.listing.userId === authId;
-    if (!canDelete) redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized")));
+    if (!canDelete) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Unauthorized"), "#comments"));
+    }
 
     await db.comment.delete({ where: { id: commentId } });
-    redirect(backTo(id));
+    redirect(backTo(id, undefined, "#comments"));
   }
 
-  // Like toggle (simple remove-or-create)
+  // Toggle like semplice: se esiste lo rimuove, altrimenti lo crea
   async function toggleLike(formData: FormData) {
     "use server";
     const { user } = await getSession();
     const authId = (user as any)?.id ?? (user as any)?.userId;
-    if (!authId) redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in")));
+    if (!authId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("You must be signed in"), "#comments"));
+    }
 
     const commentId = String(formData.get("commentId") || "");
-    if (!commentId) redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request")));
+    if (!commentId) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Invalid request"), "#comments"));
+    }
 
-    const res = await db.commentLike.deleteMany({ where: { userId: authId, commentId } });
+    const res = await db.commentLike.deleteMany({
+      where: { userId: authId, commentId },
+    });
+
     if (res.count === 0) {
       await db.commentLike.create({ data: { userId: authId, commentId } });
     }
-    redirect(backTo(id));
+
+    redirect(backTo(id, undefined, "#comments"));
   }
 
-  // CONTACT OWNER – saves Message to DB (no email required)
+  // ➜ SERVER ACTION: invio messaggio al proprietario (salvataggio in DB)
   async function sendMessage(formData: FormData) {
     "use server";
+
     const { user } = await getSession();
-    const authId = (user as any)?.id ?? (user as any)?.userId ?? null;
-    const authEmail = (user as any)?.email ?? null;
+    const authEmail: string | undefined = (user as any)?.email || undefined;
 
-    const name = String(formData.get("name") || "").trim();
-    const email = String(formData.get("email") || "").trim();
-    const phone = String(formData.get("phone") || "").trim();
     const body = String(formData.get("body") || "").trim();
+    const name = String(formData.get("name") || "").trim();
+    const phone = String(formData.get("phone") || "").trim();
+    const emailRaw = String(formData.get("email") || "").trim();
 
-    if (body.length < 10) {
-      redirect(`/listings/${id}?error=${encodeURIComponent("Message is too short")}#contact`);
+    // Se l'utente è loggato usiamo la sua email per priorità
+    const email = authEmail ?? (emailRaw || undefined);
+
+    if (body.length < 5) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Message too short"), "#contact"));
+    }
+    if (!email) {
+      redirect(backTo(id, "?error=" + encodeURIComponent("Email is required"), "#contact"));
     }
 
-    // If user is logged, email can be optional; if guest, require email.
-    if (!authId && !email) {
-      redirect(`/listings/${id}?error=${encodeURIComponent("Email is required")}#contact`);
-    }
-
-    await db.message.create({
+    // ✅ Salva in DB sul modello ContactMessage (non "message")
+    await db.contactMessage.create({
       data: {
         listingId: id,
-        senderUserId: authId,
-        senderName: name || null,
-        senderEmail: authEmail || email || null,
+        email,
+        name: name || null,
         phone: phone || null,
         body,
       },
     });
 
-    // (Email optional – you commented out the nodemailer part, so we skip it)
-
-    redirect(`/listings/${id}?ok=${encodeURIComponent("Message sent")}#contact`);
+    redirect(backTo(id, "?ok=" + encodeURIComponent("Message sent"), "#contact"));
   }
 
-  // ─────────────────────────────────────────
-  // PAGE
-  // ─────────────────────────────────────────
+  // -----------------------------
+  // PAGE RETURN (outside actions)
+  // -----------------------------
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <div className="flex items-start justify-between gap-4">
@@ -228,60 +254,51 @@ export default async function ListingDetailPage(
         </>
       ) : null}
 
-      {/* CONTACT OWNER */}
+      {/* --- CONTACT OWNER --- */}
       <section id="contact" className="mt-10">
         <h2 className="text-xl font-semibold">Contact the owner</h2>
-        <p className="mt-1 text-sm opacity-80">
-          Your message will be sent to the owner of this listing.
-        </p>
-
         <form action={sendMessage} className="mt-4 grid gap-3 sm:grid-cols-2">
-          {/* If logged, we can prefill name/email via server if you prefer; keep inputs generic */}
           <div className="sm:col-span-1">
-            <label className="mb-1 block text-sm opacity-80">Name (optional)</label>
+            <label className="block text-sm font-medium mb-1">Your name</label>
             <input
               name="name"
               type="text"
-              placeholder="Your name"
               className="w-full rounded-lg border px-3 py-2"
+              placeholder="Optional"
             />
           </div>
-
           <div className="sm:col-span-1">
-            <label className="mb-1 block text-sm opacity-80">Email {authUserId ? "(optional)" : "(required)"}</label>
+            <label className="block text-sm font-medium mb-1">Your email *</label>
             <input
               name="email"
               type="email"
-              placeholder={authEmail || "you@example.com"}
               className="w-full rounded-lg border px-3 py-2"
-              defaultValue={authEmail || ""}
+              placeholder="you@example.com"
+              required={!user}
             />
           </div>
-
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-sm opacity-80">Phone (optional)</label>
+            <label className="block text-sm font-medium mb-1">Phone</label>
             <input
               name="phone"
               type="tel"
-              placeholder="+34 ..."
               className="w-full rounded-lg border px-3 py-2"
+              placeholder="+34 ..."
             />
           </div>
-
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-sm opacity-80">Message</label>
+            <label className="block text-sm font-medium mb-1">Message *</label>
             <textarea
               name="body"
               required
-              minLength={10}
+              minLength={5}
               maxLength={2000}
-              placeholder="Write a clear message with useful details (where/when you saw the pet, contact info, etc.)"
-              className="w-full rounded-lg border px-3 py-2"
               rows={4}
+              className="w-full rounded-lg border px-3 py-2"
+              placeholder="Write details or how to reach you…"
             />
           </div>
-
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 pt-1">
             <button className="rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
               Send message
             </button>
@@ -289,7 +306,7 @@ export default async function ListingDetailPage(
         </form>
       </section>
 
-      {/* COMMENTS */}
+      {/* --- COMMENTS --- */}
       <section id="comments" className="mt-10">
         <h2 className="text-xl font-semibold">Comments ({comments.length})</h2>
 
@@ -319,9 +336,9 @@ export default async function ListingDetailPage(
         )}
 
         <div className="mt-6 space-y-4">
-          {comments.map((c: any) => {
-            const likeCount = c._count?.likes ?? 0;
-            const likedByMe = !!(authUserId && c.likes && c.likes.length > 0);
+          {comments.map((c) => {
+            const likeCount = (c as any)._count?.likes ?? 0;
+            const likedByMe = !!(authUserId && (c as any).likes && (c as any).likes.length > 0);
 
             return (
               <article key={c.id} className="rounded-lg border p-3">
@@ -332,12 +349,14 @@ export default async function ListingDetailPage(
                     </span>
                     <span className="opacity-80">{c.user?.email || "User"}</span>
                   </div>
-                  <time className="opacity-60 text-xs">{new Date(c.createdAt).toLocaleString()}</time>
+                  <time className="opacity-60 text-xs">
+                    {new Date(c.createdAt).toLocaleString()}
+                  </time>
                 </div>
-
                 <p className="whitespace-pre-wrap leading-relaxed">{c.body}</p>
 
                 <div className="mt-2 flex items-center gap-4">
+                  {/* Like / Unlike */}
                   {user ? (
                     <form action={toggleLike}>
                       <input type="hidden" name="commentId" value={c.id} />
@@ -352,10 +371,14 @@ export default async function ListingDetailPage(
                     <span className="text-xs opacity-70">❤️ {likeCount}</span>
                   )}
 
+                  {/* Delete: author or listing owner */}
                   {user && (authUserId === c.userId || isOwner) && (
                     <form action={deleteComment}>
                       <input type="hidden" name="commentId" value={c.id} />
-                      <button className="text-xs opacity-70 underline hover:opacity-100" aria-label="Delete comment">
+                      <button
+                        className="text-xs opacity-70 underline hover:opacity-100"
+                        aria-label="Delete comment"
+                      >
                         Delete
                       </button>
                     </form>
