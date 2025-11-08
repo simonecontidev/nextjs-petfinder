@@ -17,8 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className="transition-colors duration-300 bg-white text-black dark:bg-gray-900 dark:text-white"
+        className={`${inter.className} bg-[--bg] text-[--fg]`}
       >
+        {/* next-themes will toggle the "class" on html to control dark mode */}
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <Header />
           <main className="min-h-[80vh]">{children}</main>

@@ -1,3 +1,4 @@
+// src/components/ThemeToggle.tsx
 "use client";
 
 import { useTheme } from "next-themes";
@@ -9,26 +10,81 @@ export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
   const [isMounted, setIsMounted] = useState(false);
 
+  // Montiamo prima di leggere il tema per evitare mismatch di idratazione
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);
 
-  if (!isMounted) return null;
-
   const isDark = resolvedTheme === "dark";
+  const label = isDark ? "Switch to light mode" : "Switch to dark mode";
+
+  if (!isMounted) return null;
 
   return (
     <button
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-sm transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-      aria-label="Toggle dark mode"
+      className="
+        group inline-flex items-center gap-2 rounded-full
+        border border-[--header-border]
+        bg-[--toggle-bg] text-[--toggle-fg]
+        px-2.5 py-1.5 text-xs
+        transition-all duration-300
+        hover:shadow-[0_6px_18px_var(--shadow-aura)]
+        active:scale-[0.98]
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-[--brand-500]
+      "
+      aria-label={label}
+      title={label}
+      data-state={isDark ? "dark" : "light"}
+      style={{
+        // fallback per sicurezza se i CSS vars non sono caricati
+        // (non influisce se hai già messo le vars in globals.css)
+        background:
+          "var(--toggle-bg, color-mix(in oklab, white 88%, #C05E2B 12%))",
+        color: "var(--toggle-fg, #2A1B14)",
+        borderColor:
+          "var(--header-border, color-mix(in oklab, #0b0b0b 14%, transparent))",
+      }}
     >
-      {isDark ? (
-        <LightModeIcon fontSize="small" className="text-yellow-300" />
-      ) : (
-        <DarkModeIcon fontSize="small" className="text-gray-700" />
-      )}
+      {/* icone con transizione morbida */}
+      <span className="relative inline-flex h-4 w-4 items-center justify-center">
+        <LightModeIcon
+          fontSize="inherit"
+          className={`absolute transition-opacity duration-300 ${
+            isDark ? "opacity-0" : "opacity-100"
+          }`}
+        />
+        <DarkModeIcon
+          fontSize="inherit"
+          className={`absolute transition-opacity duration-300 ${
+            isDark ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      </span>
+
+      <span
+        className="
+          relative inline-flex h-5 w-10 items-center rounded-full
+          bg-[--thumb-track]
+          transition-colors duration-300
+        "
+        style={{
+          background:
+            "var(--thumb-track, color-mix(in oklab, #402218 16%, white 84%))",
+        }}
+      >
+        <span
+          className="
+            absolute left-0.5 top-0.5 h-4 w-4 rounded-full
+            bg-[--thumb] shadow-sm transition-transform duration-300
+          "
+          style={{
+            background: "var(--thumb, white)",
+            transform: isDark ? "translateX(20px)" : "translateX(0px)",
+          }}
+        />
+      </span>
     </button>
   );
 }

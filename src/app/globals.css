@@ -1,28 +1,94 @@
 @import "leaflet/dist/leaflet.css";
-
 @import "tailwindcss";
 
-html {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------- LIGHT THEME ---------- */
+:root {
+  /* App base */
+  --bg:        #FFF9F0;
+  --fg:        #2B1F16;
+  --muted:     #6D5546;
+  --card:      #FFF3E1;
+  --border:    #E9DCCF;
+
+  /* Brand */
+  --brand-50:  #FFF4E8;
+  --brand-100: #FFE8D1;
+  --brand-200: #FFD4A8;
+  --brand-300: #FFBF80;
+  --brand-400: #FFA75A;
+  --brand-500: #F58A3C;
+  --brand-600: #DC6F2A;
+  --brand-700: #B0531E;
+  --brand-800: #7A3A16;
+  --brand-900: #4B250F;
+
+  /* Header (warm soft) */
+  --header-bg:     linear-gradient(180deg, #FFF1E2 0%, #FFE7CE 100%);
+  --header-fg:     #3A281D;
+  --header-border: #F4D9BF;
+
   color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* ---------- DARK THEME ---------- */
 html.dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --bg:        #1A130E;
+  --fg:        #FCEFE3;
+  --muted:     #D9C6B7;
+  --card:      #241A13;
+  --border:    #3A2A20;
+
+  /* Brand tuned for dark */
+  --brand-500: #FFA96A;
+  --brand-600: #F58A3C;
+
+  /* Header (warm deep) */
+  --header-bg:     linear-gradient(180deg, #23170F 0%, #2B1C12 100%);
+  --header-fg:     #F7E6D7;
+  --header-border: #3A2A20;
+
   color-scheme: dark;
 }
 
+/* Tailwind mapping (fonts restano le stesse) */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+}
+
+/* Base */
+html, body { height: 100%; }
+
 body {
-  font-family: Arial, Helvetica, sans-serif;
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Cards & borders */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--fg);
+}
+
+/* Focus ring */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--brand-400, #FFA75A);
+  outline-offset: 2px;
+}
+
+/* Smoothen theme switch without “flashy” effects */
+html, body, #__next {
+  transition: background-color .25s ease, color .25s ease;
+}
+
+/* Reduce motion respect */
+@media (prefers-reduced-motion: reduce) {
+  html, body, #__next, * {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }
