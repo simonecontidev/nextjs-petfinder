@@ -1,3 +1,4 @@
+// src/app/listings/page.tsx  (o il path che usi per /listings)
 import { db } from "@/lib/db";
 import Link from "next/link";
 import MapSection from "@/components/MapSection";
@@ -13,7 +14,10 @@ const statuses = ["LOST", "FOUND", "RESOLVED"] as const;
 type ListingModel = Awaited<ReturnType<typeof db.listing.findMany>>[number];
 type Pin = { id: string; lat: number; lng: number; title: string; city?: string | null };
 
-function toEnum<T extends readonly string[]>(value: string | undefined, allowed: T): T[number] | undefined {
+function toEnum<T extends readonly string[]>(
+  value: string | undefined,
+  allowed: T
+): T[number] | undefined {
   return allowed.includes((value ?? "") as any) ? (value as T[number]) : undefined;
 }
 
@@ -31,7 +35,7 @@ async function unwrapSearchParams(
       : undefined;
 
   const get = (k: string, def = "") => {
-    const v = sp?.[k];
+    const v = (sp as any)?.[k];
     if (Array.isArray(v)) return v[0] ?? def;
     return (v ?? def) as string;
   };
@@ -41,20 +45,21 @@ async function unwrapSearchParams(
     status: get("status"),
     city: get("city"),
     showMap: get("showMap", "1"),
-    view: get("view", "grid"),      // grid | list
-    cols: get("cols", "2"),         // 1 | 2 | 3
-    sort: get("sort", "latest"),    // latest | oldest | status
+    view: get("view", "grid"), // grid | list
+    cols: get("cols", "2"),    // 1 | 2 | 3
+    sort: get("sort", "latest"),
     page: parseInt(get("page", "1") || "1", 10),
     perPage: Math.min(Math.max(parseInt(get("perPage", "12") || "12", 10), 1), 48),
   };
 }
 
+/** Warm badge styles via CSS variables */
 function badgeClasses(status: string) {
-  return status === "FOUND"
-    ? "bg-green-100 text-green-700"
-    : status === "LOST"
-    ? "bg-red-100 text-red-700"
-    : "bg-gray-100 text-gray-700";
+  if (status === "FOUND")
+    return "bg-[var(--status-found-bg)] text-[var(--status-found-fg)]";
+  if (status === "LOST")
+    return "bg-[var(--status-lost-bg)] text-[var(--status-lost-fg)]";
+  return "bg-[var(--status-resolved-bg)] text-[var(--status-resolved-fg)]";
 }
 
 export default async function ListingsPage(
@@ -73,18 +78,19 @@ export default async function ListingsPage(
   const page = isFinite(raw.page) && raw.page > 0 ? raw.page : 1;
   const perPage = raw.perPage;
 
-  // 2) Costruisci filtro
+  // 2) Where
   const where: any = {};
   if (qAnimal) where.animalType = qAnimal;
   if (qStatus) where.status = qStatus;
   if (qCity) where.city = { contains: qCity };
 
-  // 3) Ordinamento
+  // 3) Order
   let orderBy: any = { createdAt: "desc" as const };
   if (raw.sort === "oldest") orderBy = { createdAt: "asc" as const };
-  else if (raw.sort === "status") orderBy = [{ status: "asc" as const }, { createdAt: "desc" as const }];
+  else if (raw.sort === "status")
+    orderBy = [{ status: "asc" as const }, { createdAt: "desc" as const }];
 
-  // 4) Conteggio per paginazione
+  // 4) Count
   const total = await db.listing.count({ where });
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const current = Math.min(page, totalPages);
@@ -108,7 +114,7 @@ export default async function ListingsPage(
       city: l.city ?? null,
     }));
 
-  // 6) Classi responsive grid
+  // 6) Grid cols
   const gridCols =
     view === "list"
       ? "grid-cols-1"
@@ -118,7 +124,7 @@ export default async function ListingsPage(
       ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
       : "grid-cols-1 sm:grid-cols-2"; // default 2
 
-  // 7) Helpers paginazione
+  // 7) Pagination href
   const makePageHref = (p: number) => {
     const params = new URLSearchParams({
       ...((qAnimal && { animalType: qAnimal }) || {}),
@@ -134,24 +140,31 @@ export default async function ListingsPage(
     return `/listings?${params.toString()}`;
   };
 
+  // shared classes (warm UI)
+  const cardBase =
+    "overflow-hidden rounded-2xl border shadow transition hover:shadow-lg " +
+    "bg-[var(--surface-elev)] border-[var(--surface-border)]";
+  const subtleText = "text-[var(--on-surface)]/70";
+  const buttonGhost =
+    "rounded-lg border px-3 py-2 text-sm " +
+    "bg-[var(--surface-soft)] border-[var(--surface-border)] text-[var(--on-surface)] " +
+    "hover:bg-[var(--surface-strong)] transition-colors";
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-bold">Pet Listings</h1>
+        <h1 className="text-3xl font-bold text-[var(--on-surface)]">Pet Listings</h1>
         <div className="flex flex-wrap items-center gap-3">
           <ListingsViewControls />
           <MapToggle />
-          <Link
-            href="/listings/new"
-            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
+          <Link href="/listings/new" className={buttonGhost}>
             + New listing
           </Link>
         </div>
       </div>
 
-      {/* Risultati / info riga */}
-      <div className="mb-4 text-sm text-gray-600 dark:text-gray-300">
+      {/* Result info row */}
+      <div className={`mb-4 text-sm ${subtleText}`}>
         {total} result{total !== 1 ? "s" : ""} • page {current} of {totalPages}
       </div>
 
@@ -168,17 +181,15 @@ export default async function ListingsPage(
           </div>
         </aside>
 
-        {/* LISTA */}
+        {/* LIST */}
         <section className="lg:col-span-8">
           {listings.length === 0 ? (
-            <p className="text-gray-500 dark:text-gray-300">
-              No listings found. Try removing some filters.
-            </p>
+            <p className={subtleText}>No listings found. Try removing some filters.</p>
           ) : view === "list" ? (
-            // LIST VIEW (card più larga e descrizione compatta, se servirà)
+            // LIST VIEW
             <ul className="space-y-4">
               {listings.map((item: ListingModel) => (
-                <li key={item.id} className="overflow-hidden rounded-2xl border bg-white shadow hover:shadow-lg dark:bg-gray-800">
+                <li key={item.id} className={cardBase}>
                   <Link href={`/listings/${item.id}`} className="flex gap-4">
                     <img
                       src={item.photos || "https://via.placeholder.com/200x150"}
@@ -187,14 +198,23 @@ export default async function ListingsPage(
                     />
                     <div className="flex-1 p-4">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold">{item.title}</h3>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClasses(item.status)}`}>
+                        <h3 className="text-lg font-semibold text-[var(--on-surface)]">
+                          {item.title}
+                        </h3>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClasses(
+                            item.status
+                          )}`}
+                        >
                           {item.status}
                         </span>
                       </div>
-                      <div className="mt-1 text-sm opacity-80">{item.animalType}{item.city ? ` • ${item.city}` : ""}</div>
+                      <div className={`mt-1 text-sm ${subtleText}`}>
+                        {item.animalType}
+                        {item.city ? ` • ${item.city}` : ""}
+                      </div>
                       {item.createdAt && (
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="mt-1 text-xs text-[var(--on-surface)]/50">
                           {new Date(item.createdAt).toLocaleDateString()}
                         </div>
                       )}
@@ -207,11 +227,7 @@ export default async function ListingsPage(
             // GRID VIEW
             <div className={`grid gap-6 ${gridCols}`}>
               {listings.map((item: ListingModel) => (
-                <Link
-                  key={item.id}
-                  href={`/listings/${item.id}`}
-                  className="block overflow-hidden rounded-2xl border bg-white shadow transition hover:shadow-lg dark:bg-gray-800"
-                >
+                <Link key={item.id} href={`/listings/${item.id}`} className={cardBase}>
                   <img
                     src={item.photos || "https://via.placeholder.com/400x300"}
                     alt={item.title}
@@ -219,36 +235,50 @@ export default async function ListingsPage(
                   />
                   <div className="p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-lg font-semibold">{item.title}</h3>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClasses(item.status)}`}>
+                      <h3 className="text-lg font-semibold text-[var(--on-surface)]">
+                        {item.title}
+                      </h3>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClasses(
+                          item.status
+                        )}`}
+                      >
                         {item.status}
                       </span>
                     </div>
                     {item.city && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300">{item.city}</p>
+                      <p className={`text-sm ${subtleText}`}>{item.city}</p>
                     )}
-                    <p className="mt-1 text-sm opacity-80">{item.animalType}</p>
+                    <p className="mt-1 text-sm text-[var(--on-surface)]/80">
+                      {item.animalType}
+                    </p>
                   </div>
                 </Link>
               ))}
             </div>
           )}
 
-          {/* PAGINAZIONE */}
+          {/* PAGINATION */}
           {totalPages > 1 && (
             <nav className="mt-8 flex items-center justify-between">
               <Link
                 href={makePageHref(Math.max(1, current - 1))}
                 aria-disabled={current === 1}
-                className={`rounded-md border px-3 py-2 text-sm ${current === 1 ? "pointer-events-none opacity-50" : "hover:bg-gray-50 dark:hover:bg-gray-800"}`}
+                className={`${buttonGhost} ${
+                  current === 1 ? "pointer-events-none opacity-50" : ""
+                }`}
               >
                 ← Prev
               </Link>
-              <span className="text-sm">Page {current} / {totalPages}</span>
+              <span className="text-sm text-[var(--on-surface)]/80">
+                Page {current} / {totalPages}
+              </span>
               <Link
                 href={makePageHref(Math.min(totalPages, current + 1))}
                 aria-disabled={current === totalPages}
-                className={`rounded-md border px-3 py-2 text-sm ${current === totalPages ? "pointer-events-none opacity-50" : "hover:bg-gray-50 dark:hover:bg-gray-800"}`}
+                className={`${buttonGhost} ${
+                  current === totalPages ? "pointer-events-none opacity-50" : ""
+                }`}
               >
                 Next →
               </Link>

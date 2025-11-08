@@ -92,3 +92,68 @@ html, body, #__next {
     scroll-behavior: auto !important;
   }
 }
+
+/* === GLOBAL FORM + BUTTON STYLE OVERRIDE (responsive to dark/light mode) === */
+
+/* Buttons */
+button,
+[type="button"],
+[type="submit"] {
+  color: #111 !important; /* Light mode: nero */
+}
+
+html.dark button,
+html.dark [type="button"],
+html.dark [type="submit"] {
+  color: #fff !important; /* Dark mode: bianco */
+}
+
+/* Inputs & selects — testo e placeholder */
+input,
+select,
+textarea {
+  color: #111; /* Light mode */
+  background-color: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Placeholder color */
+::placeholder {
+  color: rgba(17, 17, 17, 0.6);
+}
+html.dark ::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Focus ring for accessibility */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
+}
+
+/* Dropdown options (system default in most browsers) */
+select option {
+  color: #000;
+}
+
+/* Disabled buttons */
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
