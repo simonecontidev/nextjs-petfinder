@@ -168,7 +168,6 @@ export default async function ListingDetailPage(
       redirect(backTo(id, "?error=" + encodeURIComponent("Email is required"), "#contact"));
     }
 
-    // ✅ Salva in DB sul modello ContactMessage (non "message")
     await db.contactMessage.create({
       data: {
         listingId: id,
@@ -218,10 +217,7 @@ export default async function ListingDetailPage(
 
         {isOwner && (
           <div className="shrink-0">
-            <Link
-              href={`/listings/${listing.id}/edit`}
-              className="inline-block rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-            >
+            <Link href={`/listings/${listing.id}/edit`} className="btn-outline text-sm">
               Edit
             </Link>
           </div>
@@ -243,7 +239,7 @@ export default async function ListingDetailPage(
           <MapDetail lat={listing.latitude} lng={listing.longitude} title={listing.title} />
           <div className="mt-4">
             <a
-              className="inline-block rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+              className="btn-outline text-sm"
               href={`https://www.google.com/maps?q=${listing.latitude},${listing.longitude}`}
               target="_blank"
               rel="noopener noreferrer"
@@ -299,9 +295,7 @@ export default async function ListingDetailPage(
             />
           </div>
           <div className="sm:col-span-2 pt-1">
-            <button className="rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
-              Send message
-            </button>
+            <button className="btn-primary">Send message</button>
           </div>
         </form>
       </section>
@@ -322,9 +316,7 @@ export default async function ListingDetailPage(
               className="w-full rounded-lg border px-3 py-2"
               rows={3}
             />
-            <button className="rounded-lg bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
-              Post comment
-            </button>
+            <button className="btn-primary">Post comment</button>
           </form>
         ) : (
           <p className="mt-3 text-sm opacity-80">
@@ -361,7 +353,7 @@ export default async function ListingDetailPage(
                     <form action={toggleLike}>
                       <input type="hidden" name="commentId" value={c.id} />
                       <button
-                        className="text-xs rounded border px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        className="btn-outline text-xs"
                         aria-label={likedByMe ? "Unlike comment" : "Like comment"}
                       >
                         {likedByMe ? "💚 Liked" : "🤍 Like"} · {likeCount}
@@ -375,10 +367,7 @@ export default async function ListingDetailPage(
                   {user && (authUserId === c.userId || isOwner) && (
                     <form action={deleteComment}>
                       <input type="hidden" name="commentId" value={c.id} />
-                      <button
-                        className="text-xs opacity-70 underline hover:opacity-100"
-                        aria-label="Delete comment"
-                      >
+                      <button className="btn-outline text-xs" aria-label="Delete comment">
                         Delete
                       </button>
                     </form>

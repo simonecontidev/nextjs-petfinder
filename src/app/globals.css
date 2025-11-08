@@ -157,3 +157,16 @@ button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+
+
+/* --- BUTTON THEME STYLES --- */
+.btn-primary {
+  @apply rounded-lg px-5 py-2.5 font-medium transition-colors duration-200;
+  @apply bg-black text-white hover:bg-gray-800 dark:bg-amber-800 dark:text-black dark:hover:bg-amber-800;
+}
+
+.btn-outline {
+  @apply rounded-lg border px-4 py-2 font-medium transition-colors duration-200;
+  @apply border-gray-300 text-gray-800 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800;
+}
