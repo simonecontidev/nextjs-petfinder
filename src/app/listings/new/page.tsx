@@ -20,7 +20,7 @@ const ListingSchema = z.object({
   animalType: z.enum(["DOG", "CAT", "BIRD", "REPTILE", "RABBIT", "OTHER"]),
   status: z.enum(["LOST", "FOUND", "RESOLVED"]).default("LOST"),
   city: z.string().trim().max(120).optional().or(z.literal("")),
-  // URL opzionale: se carichi un file, l’URL viene ignorato
+  // Optional URL — ignored if a file is uploaded
   photos: z.string().url().optional().or(z.literal("")),
   latitude: z.coerce.number().optional(),
   longitude: z.coerce.number().optional(),
@@ -28,15 +28,18 @@ const ListingSchema = z.object({
 
 async function saveUploadedImage(file: File): Promise<string> {
   if (!ALLOWED_TYPES.includes(file.type)) {
-    throw new Error("Tipo file non valido. Usa JPG/PNG/WebP.");
+    throw new Error("Invalid file type. Use JPG, PNG or WebP.");
   }
   if (file.size > MAX_SIZE) {
-    throw new Error("File troppo grande (max 5MB).");
+    throw new Error("File too large (max 5MB).");
   }
 
   const ext =
-    file.type === "image/png" ? "png" :
-    file.type === "image/webp" ? "webp" : "jpg";
+    file.type === "image/png"
+      ? "png"
+      : file.type === "image/webp"
+      ? "webp"
+      : "jpg";
 
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
@@ -53,9 +56,10 @@ async function saveUploadedImage(file: File): Promise<string> {
 async function createListing(formData: FormData) {
   "use server";
 
-  // ✅ Solo loggati
+  // ✅ Auth check
   const { user: actionUser } = await getSession();
-  const authUserId = (actionUser as any)?.id ?? (actionUser as any)?.userId ?? null;
+  const authUserId =
+    (actionUser as any)?.id ?? (actionUser as any)?.userId ?? null;
   if (!authUserId) redirect("/login");
 
   const file = formData.get("photo") as File | null;
@@ -74,7 +78,8 @@ async function createListing(formData: FormData) {
   const parsed = ListingSchema.safeParse(raw);
   if (!parsed.success) {
     const msg = encodeURIComponent(
-      "Controlla i campi: " + (parsed.error.errors[0]?.message ?? "Errore")
+      "Please check the fields: " +
+        (parsed.error.errors[0]?.message ?? "Unknown error")
     );
     redirect(`/listings/new?error=${msg}`);
   }
@@ -87,11 +92,11 @@ async function createListing(formData: FormData) {
       photoUrl = parsed.data.photos;
     }
   } catch (e: any) {
-    const msg = encodeURIComponent(e?.message ?? "Errore upload immagine");
+    const msg = encodeURIComponent(e?.message ?? "Image upload error");
     redirect(`/listings/new?error=${msg}`);
   }
 
-  // ✅ CREA collegando l'utente con relation (più sicuro di settare direttamente userId)
+  // ✅ Create listing and link to user
   const created = await db.listing.create({
     data: {
       title: parsed.data.title,
@@ -100,8 +105,12 @@ async function createListing(formData: FormData) {
       status: parsed.data.status || "LOST",
       city: parsed.data.city || null,
       photos: photoUrl,
-      latitude: Number.isFinite(parsed.data.latitude as any) ? parsed.data.latitude! : null,
-      longitude: Number.isFinite(parsed.data.longitude as any) ? parsed.data.longitude! : null,
+      latitude: Number.isFinite(parsed.data.latitude as any)
+        ? parsed.data.latitude!
+        : null,
+      longitude: Number.isFinite(parsed.data.longitude as any)
+        ? parsed.data.longitude!
+        : null,
       user: { connect: { id: authUserId } },
     },
     select: { id: true },
@@ -117,16 +126,18 @@ export default async function NewListingPage({
 }: {
   searchParams?: { error?: string };
 }) {
-  // ✅ protezione: se non loggato, manda a /login
+  // ✅ Protect route: redirect if not logged in
   const { user } = await getSession();
   const authUserId = (user as any)?.id ?? (user as any)?.userId ?? null;
   if (!authUserId) redirect("/login");
 
-  const error = searchParams?.error ? decodeURIComponent(searchParams.error) : null;
+  const error = searchParams?.error
+    ? decodeURIComponent(searchParams.error)
+    : null;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-3xl font-bold mb-6">Crea nuovo annuncio</h1>
+      <h1 className="text-3xl font-bold mb-6">Create a New Listing</h1>
 
       {error && (
         <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -134,21 +145,25 @@ export default async function NewListingPage({
         </div>
       )}
 
-      <form action={createListing} encType="multipart/form-data" className="space-y-5">
+      <form
+        action={createListing}
+        encType="multipart/form-data"
+        className="space-y-5"
+      >
         <div>
-          <label className="block text-sm font-medium mb-1">Titolo *</label>
+          <label className="block text-sm font-medium mb-1">Title *</label>
           <input
             name="title"
             required
             minLength={3}
             maxLength={120}
             className="w-full rounded-lg border px-3 py-2 outline-none focus:ring"
-            placeholder="Es. Cane smarrito zona Retiro"
+            placeholder="e.g. Lost dog near Retiro Park"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Descrizione *</label>
+          <label className="block text-sm font-medium mb-1">Description *</label>
           <textarea
             name="description"
             required
@@ -156,13 +171,13 @@ export default async function NewListingPage({
             maxLength={2000}
             rows={5}
             className="w-full rounded-lg border px-3 py-2 outline-none focus:ring"
-            placeholder="Descrivi l'animale, colore, collare, carattere, contatti..."
+            placeholder="Describe the animal: color, collar, behavior, contact info..."
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Tipo *</label>
+            <label className="block text-sm font-medium mb-1">Animal Type *</label>
             <select
               name="animalType"
               required
@@ -179,7 +194,7 @@ export default async function NewListingPage({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Stato *</label>
+            <label className="block text-sm font-medium mb-1">Status *</label>
             <select
               name="status"
               required
@@ -193,59 +208,61 @@ export default async function NewListingPage({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Città</label>
+            <label className="block text-sm font-medium mb-1">City</label>
             <input
               name="city"
               className="w-full rounded-lg border px-3 py-2"
-              placeholder="Es. Madrid"
+              placeholder="e.g. Madrid"
             />
           </div>
         </div>
 
-        {/* Upload file + URL alternativo */}
+        {/* File upload + optional URL */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Foto (file)</label>
+            <label className="block text-sm font-medium mb-1">Photo (file)</label>
             <input
               name="photo"
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="w-full rounded-lg border px-3 py-2 bg-white file:mr-3 file:rounded file:border file:px-3 file:py-1"
             />
-            <p className="mt-1 text-xs opacity-70">JPG/PNG/WebP — max 5MB</p>
+            <p className="mt-1 text-xs opacity-70">JPG / PNG / WebP — max 5MB</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Oppure URL immagine</label>
+            <label className="block text-sm font-medium mb-1">Or image URL</label>
             <input
               name="photos"
               type="url"
               className="w-full rounded-lg border px-3 py-2"
               placeholder="https://..."
             />
-            <p className="mt-1 text-xs opacity-70">Se carichi un file, l’URL viene ignorato.</p>
+            <p className="mt-1 text-xs opacity-70">
+              If a file is uploaded, the URL will be ignored.
+            </p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Latitudine</label>
+            <label className="block text-sm font-medium mb-1">Latitude</label>
             <input
               name="latitude"
               type="number"
               step="any"
               className="w-full rounded-lg border px-3 py-2"
-              placeholder="Es. 40.4168"
+              placeholder="e.g. 40.4168"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Longitudine</label>
+            <label className="block text-sm font-medium mb-1">Longitude</label>
             <input
               name="longitude"
               type="number"
               step="any"
               className="w-full rounded-lg border px-3 py-2"
-              placeholder="Es. -3.7038"
+              placeholder="e.g. -3.7038"
             />
           </div>
         </div>
@@ -255,7 +272,7 @@ export default async function NewListingPage({
             type="submit"
             className="rounded-lg bg-black px-5 py-2.5 text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
           >
-            Pubblica annuncio
+            Publish Listing
           </button>
         </div>
       </form>
