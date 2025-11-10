@@ -5,13 +5,6 @@ It combines a clean, accessible UI with secure authentication, a relational data
 
 ---
 
-## 🚀 Live Demo
-
-👉 [Demo Link (optional)](https://petfinder.simoneconti.work)  
-_(Replace with your actual URL if hosted)_ 
-
----
-
 ## 🧠 Project Overview
 
 PetFinder allows users to:
